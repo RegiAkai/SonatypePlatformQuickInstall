@@ -1,0 +1,21 @@
+#!/bin/bash
+set -e # Exit immediately if a command exits with a non-zero status
+
+echo "--- Initializing application databases and users ---"
+
+# Create Nexus RM (sonatyperm) user and database
+# Uses environment variables passed to the postgres container, which have defaults from docker-compose.yml
+psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-EOSQL
+    CREATE USER "${INIT_RM_DB_USER}" WITH PASSWORD '${INIT_APP_DB_PASSWORD}';
+    CREATE DATABASE "${INIT_RM_DB_NAME}";
+EOSQL
+echo "Nexus RM user '${INIT_RM_DB_USER}' and database '${INIT_RM_DB_NAME}' created."
+
+# Create Sonatype IQ (sonatypeiq) user and database
+psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-EOSQL
+    CREATE USER "${INIT_IQ_DB_USER}" WITH PASSWORD '${INIT_APP_DB_PASSWORD}';
+    CREATE DATABASE "${INIT_IQ_DB_NAME}";
+EOSQL
+echo "Sonatype IQ user '${INIT_IQ_DB_USER}' and database '${INIT_IQ_DB_NAME}' created."
+
+echo "--- Database initialization script finished successfully ---"

@@ -1,0 +1,12 @@
+# JDBC URL for connecting to the PostgreSQL database.
+# Example: jdbc:postgresql://postgres:5432/sonatyperm
+jdbcUrl=jdbc\:${DB_TYPE_TPL}\://${DB_HOST_TPL}\:${DB_PORT_TPL}/${RM_DB_NAME_TPL}
+
+# Username for connecting to the RM database
+username=${RM_DB_USERNAME_TPL}
+
+# Password for connecting to the RM database
+password=${DB_PASSWORD_TPL}
+
+# Advanced JDBC properties
+advanced=maximumPoolSize\=${DB_MAX_POOL_SIZE_TPL}

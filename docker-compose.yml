@@ -1,0 +1,105 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15
+    container_name: postgres
+    restart: unless-stopped
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./resources/init-db.sh:/docker-entrypoint-initdb.d/init-db.sh # Mount init script
+      - ./resources/set-config.sql:/docker-entrypoint-initdb.d/set-config.sql # Mount your SQL config script
+    environment:
+      # PostgreSQL instance admin credentials
+      POSTGRES_USER: ${PG_ADMIN_USER:-admin}
+      POSTGRES_PASSWORD: ${PG_ADMIN_PASS:-myPassword} # Default for the main PostgreSQL admin
+
+      # Variables for init-db.sh to create application-specific users and databases
+      # These will also use your host env vars if set, otherwise these defaults.
+      INIT_RM_DB_USER: ${RM_DATABASE_USERNAME:-sonatyperm}
+      INIT_RM_DB_NAME: ${RM_DATABASE_NAME:-sonatyperm} # Defaulting RM DB name
+      INIT_IQ_DB_USER: ${IQ_DATABASE_USERNAME:-sonatypeiq}
+      INIT_IQ_DB_NAME: ${IQ_DATABASE_NAME:-sonatypeiq}
+      INIT_APP_DB_PASSWORD: ${DATABASE_PASSWORD:-myPassword} # Common password for app DB users
+    ports:
+      # Use host variable for port, default to 8090
+      - "${DATABASE_PORT:-8090}:${DATABASE_INTERNAL_PORT:-5432}"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${PG_ADMIN_USER:-admin}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  nexus: # This is your Sonatype RM
+    image: sonatype/nexus3
+    container_name: nexus
+    restart: unless-stopped
+    ports:
+      - "8081:8081"
+    volumes:
+      - nexus-data:/nexus-data
+      - ./resources/license.lic:/etc/license.lic:ro # Mount as read-only
+    environment:
+      DB_TYPE_TPL: ${DATABASE_TYPE:-postgresql}
+      DB_HOST_TPL: ${DATABASE_HOSTNAME:-postgres} # Use 'postgres' for Docker internal
+      DB_PORT_TPL: ${DATABASE_INTERNAL_PORT:-5432} # Use '5432' for Docker internal
+      DB_MAX_POOL_SIZE_TPL: ${DATABASE_MAX_POOL_SIZE}
+      RM_DB_NAME_TPL: ${RM_DATABASE_NAME:-sonatyperm}
+      RM_DB_USERNAME_TPL: ${RM_DATABASE_USERNAME:-sonatyperm}
+      DB_PASSWORD_TPL: ${DATABASE_PASSWORD:-myPassword}
+
+      NEXUS_LICENSE_FILE: /etc/license.lic  
+      NEXUS_DATASTORE_NEXUS_JDBCURL: jdbc:postgresql://postgres:5432/${RM_DATABASE_NAME:-sonatyperm}?tcpKeepAlive=true&loginTimeout=5&connectionTimeout=5&socketTimeout=30&cancelSignalTimeout=5&targetServerType=primary
+      NEXUS_DATASTORE_NEXUS_USERNAME: ${RM_DATABASE_USERNAME:-sonatyperm}
+      NEXUS_DATASTORE_NEXUS_PASSWORD: ${DATABASE_PASSWORD:-myPassword}
+      NEXUS_DATASTORE_NEXUS_ADVANCED: "maximumPoolSize=${DATABASE_MAX_POOL_SIZE:-200}" # Value from your recent logs
+      NEXUS_DATASTORE_ENABLED: true
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  iq: # Sonatype IQ Server
+    image: sonatype/nexus-iq-server
+    container_name: iq
+    restart: unless-stopped
+    ports:
+      - "8070:8070"
+      - "8071:8071"
+    volumes:
+      - iq-data:/sonatype-work
+      - ./resources/license.lic:/etc/license.lic:ro # Mount as read-only
+    environment:
+      SONATYPE_WORK: /sonatype-work
+      JAVA_OPTS: >-  # Or JAVA_TOOL_OPTIONS, check IQ image docs if this doesn't work
+        -Ddw.database.type=postgresql
+        -Ddw.database.hostname=postgres
+        -Ddw.database.port=${DATABASE_INTERNAL_PORT:-5432}
+        -Ddw.database.name=${IQ_DATABASE_NAME:-sonatypeiq}
+        -Ddw.database.username=${IQ_DATABASE_USERNAME:-sonatypeiq}
+        -Ddw.database.password=${DATABASE_PASSWORD:-myPassword}
+        -Ddw.licenseFile=/etc/license.lic
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  ngrok:
+    image: ngrok/ngrok:latest
+    container_name: ngrok
+    restart: unless-stopped
+    # If your ngrok.yml uses environment variable interpolation like `authtoken: ${NGROK_HOST_AUTHTOKEN}`
+    # you would pass NGROK_HOST_AUTHTOKEN here.
+    # environment:
+    #   NGROK_HOST_AUTHTOKEN: ${NGROK_AUTHTOKEN_FROM_SHELL_OR_DOTENV:-your_default_ngrok_token_here}
+    command: start --all --config /etc/ngrok.yml
+    volumes:
+      - ./resources/ngrok.yml:/etc/ngrok.yml
+    ports:
+      - "4040:4040"
+    depends_on:
+      - nexus
+      - iq
+
+volumes:
+  nexus-data:
+  iq-data:
+  postgres-data:
