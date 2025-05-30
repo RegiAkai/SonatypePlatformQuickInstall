@@ -1,0 +1,10 @@
+version: 3
+agent:
+  authtoken: <YOUR_AUTH_TOKEN> 
+tunnels:
+  nexus:
+    proto: http
+    addr: nexus:8081
+  iq:
+    proto: http
+    addr: iq:8070
